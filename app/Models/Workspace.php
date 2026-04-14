@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use App\Models\User;
 
 class Workspace extends Model
 {
@@ -13,7 +12,7 @@ class Workspace extends Model
         'nombre',
         'slug',
         'plan_id',
-        'owner_id'
+        'owner_id',
     ];
 
     public function plan()
@@ -31,5 +30,15 @@ class Workspace extends Model
         return $this->belongsToMany(User::class, 'workspace_user')
             ->withPivot('role_id')
             ->withTimestamps();
+    }
+
+    public function contratantes()
+    {
+        return $this->hasMany(Contratante::class);
+    }
+
+    public function polizas()
+    {
+        return $this->hasMany(Poliza::class);
     }
 }

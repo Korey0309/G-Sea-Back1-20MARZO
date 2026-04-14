@@ -12,7 +12,7 @@ class AgentePromotoria extends Model
         'workspace_id',
         'user_id',
         'aseguradora_id',
-        'clave_agente'
+        'clave_agente',
     ];
 
     public function workspace()
@@ -28,5 +28,10 @@ class AgentePromotoria extends Model
     public function aseguradora()
     {
         return $this->belongsTo(Aseguradora::class);
+    }
+
+    public function polizas()
+    {
+        return $this->hasMany(Poliza::class, 'agente_id');
     }
 }

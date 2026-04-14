@@ -9,11 +9,16 @@ class Aseguradora extends Model
     protected $table = 'aseguradoras';
 
     protected $fillable = [
-        'nombre'
+        'nombre',
     ];
 
     public function agentes()
     {
         return $this->hasMany(AgentePromotoria::class);
+    }
+
+    public function polizas()
+    {
+        return $this->hasMany(Poliza::class);
     }
 }
