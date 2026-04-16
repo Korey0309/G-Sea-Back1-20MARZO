@@ -11,7 +11,8 @@ class WorkspaceController extends Controller
 {
     public function index(Request $request)
     {
-        return Workspace::query()
+        return $request->user()
+            ->workspaces()
             ->with(['plan', 'owner'])
             ->orderBy('nombre')
             ->paginate($request->integer('per_page', 15));

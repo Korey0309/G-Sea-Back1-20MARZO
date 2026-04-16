@@ -15,6 +15,7 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'current_workspace_id',
     ];
 
     protected $hidden = [
@@ -40,7 +41,7 @@ class User extends Authenticatable
 
     public function currentWorkspace()
     {
-        return $this->workspaces()->first();
+        return $this->belongsTo(Workspace::class, 'current_workspace_id');
     }
 
     public function roles()

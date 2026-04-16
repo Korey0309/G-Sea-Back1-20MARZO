@@ -14,7 +14,7 @@ class Aseguradora extends Model
 
     public function agentes()
     {
-        return $this->hasMany(AgentePromotoria::class);
+        return $this->hasMany(AgenteWorkspaceAseguradora::class);
     }
 
     public function polizas()

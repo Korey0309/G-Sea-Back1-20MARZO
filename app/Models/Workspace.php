@@ -41,4 +41,19 @@ class Workspace extends Model
     {
         return $this->hasMany(Poliza::class);
     }
+
+    public function agentes()
+    {
+        return $this->hasMany(AgenteWorkspace::class);
+    }
+
+    public function tramites()
+    {
+        return $this->hasMany(Tramite::class);
+    }
+
+    public function cobranzaCuotas()
+    {
+        return $this->hasMany(CobranzaCuota::class);
+    }
 }

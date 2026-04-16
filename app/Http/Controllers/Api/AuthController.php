@@ -49,8 +49,11 @@ class AuthController extends Controller
         $device = $credentials['device_name'] ?? 'api';
         $token = $user->createToken($device)->plainTextToken;
 
+        $this->ensureCurrentWorkspace($user);
+        $user->refresh();
+
         return response()->json([
-            'user' => $user,
+            'user' => $user->load(['workspaces', 'currentWorkspace']),
             'token' => $token,
             'token_type' => 'Bearer',
         ]);
@@ -91,6 +94,9 @@ class AuthController extends Controller
                 'user_id' => $user->id,
                 'role_id' => $adminRole->id,
             ]);
+
+            $user->current_workspace_id = $workspace->id;
+            $user->save();
         });
 
         event(new Registered($user));
@@ -99,10 +105,45 @@ class AuthController extends Controller
         $token = $user->createToken($device)->plainTextToken;
 
         return response()->json([
-            'user' => $user->load('workspaces'),
+            'user' => $user->load(['workspaces', 'currentWorkspace']),
             'token' => $token,
             'token_type' => 'Bearer',
         ], 201);
+    }
+
+    public function me(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $this->ensureCurrentWorkspace($user);
+        $user->refresh();
+
+        return response()->json($user->load(['workspaces', 'currentWorkspace']));
+    }
+
+    public function setCurrentWorkspace(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'workspace_id' => ['required', 'exists:workspaces,id'],
+        ]);
+
+        $user = $request->user();
+        $belongs = $user->workspaces()
+            ->where('workspaces.id', $data['workspace_id'])
+            ->exists();
+
+        if (! $belongs) {
+            return response()->json([
+                'message' => 'No tienes acceso al workspace indicado.',
+            ], 403);
+        }
+
+        $user->current_workspace_id = $data['workspace_id'];
+        $user->save();
+
+        return response()->json([
+            'message' => 'Workspace activo actualizado.',
+            'user' => $user->fresh()->load(['workspaces', 'currentWorkspace']),
+        ]);
     }
 
     public function logout(Request $request): JsonResponse
@@ -134,5 +175,21 @@ class AuthController extends Controller
     private function loginThrottleKey(Request $request): string
     {
         return Str::transliterate(Str::lower((string) $request->input('email')).'|'.$request->ip());
+    }
+
+    private function ensureCurrentWorkspace(User $user): void
+    {
+        if (! empty($user->current_workspace_id)) {
+            $hasAccess = $user->workspaces()
+                ->where('workspaces.id', $user->current_workspace_id)
+                ->exists();
+            if ($hasAccess) {
+                return;
+            }
+        }
+
+        $firstWorkspaceId = $user->workspaces()->value('workspaces.id');
+        $user->current_workspace_id = $firstWorkspaceId;
+        $user->save();
     }
 }

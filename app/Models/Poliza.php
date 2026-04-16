@@ -24,6 +24,9 @@ class Poliza extends Model
         'iva',
         'prima_total',
         'moneda',
+        'frecuencia_cobro',
+        'monto_cuota',
+        'telefono_notificacion',
     ];
 
     protected function casts(): array
@@ -35,6 +38,7 @@ class Poliza extends Model
             'prima_neta' => 'decimal:2',
             'iva' => 'decimal:2',
             'prima_total' => 'decimal:2',
+            'monto_cuota' => 'decimal:2',
         ];
     }
 
@@ -48,10 +52,10 @@ class Poliza extends Model
         return $this->belongsTo(Contratante::class);
     }
 
-    /** Registro en agentes_promotoria (clave con aseguradora). */
-    public function agentePromotoria(): BelongsTo
+    /** Asignacion del agente al workspace. */
+    public function agenteWorkspace(): BelongsTo
     {
-        return $this->belongsTo(AgentePromotoria::class, 'agente_id');
+        return $this->belongsTo(AgenteWorkspace::class, 'agente_id');
     }
 
     public function aseguradora(): BelongsTo
@@ -77,5 +81,10 @@ class Poliza extends Model
     public function documentos(): HasMany
     {
         return $this->hasMany(PolizaDocumento::class);
+    }
+
+    public function cobranzaCuotas(): HasMany
+    {
+        return $this->hasMany(CobranzaCuota::class);
     }
 }

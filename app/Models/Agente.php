@@ -10,6 +10,7 @@ class Agente extends Model
     use HasFactory;
 
     protected $fillable = [
+        'cedula',
         'nombre',
         'apellido',
         'email',
@@ -22,6 +23,7 @@ class Agente extends Model
         'direccion',
         'fecha_alta',
         'activo',
+        'foto_url',
     ];
 
     protected function casts(): array
@@ -31,5 +33,10 @@ class Agente extends Model
             'fecha_alta' => 'date',
             'activo' => 'boolean',
         ];
+    }
+
+    public function workspaces()
+    {
+        return $this->hasMany(AgenteWorkspace::class);
     }
 }

@@ -18,6 +18,7 @@ class AgenteController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate([
+            'cedula' => 'required|string|max:255|unique:agentes,cedula',
             'nombre' => 'required|string|max:255',
             'apellido' => 'nullable|string|max:255',
             'email' => 'nullable|email|max:255|unique:agentes,email',
@@ -30,6 +31,7 @@ class AgenteController extends Controller
             'direccion' => 'nullable|string',
             'fecha_alta' => 'nullable|date',
             'activo' => 'boolean',
+            'foto_url' => 'nullable|string|max:2048',
         ]);
 
         $agente = Agente::create($data);
@@ -45,6 +47,7 @@ class AgenteController extends Controller
     public function update(Request $request, Agente $agente)
     {
         $data = $request->validate([
+            'cedula' => 'sometimes|required|string|max:255|unique:agentes,cedula,'.$agente->id,
             'nombre' => 'sometimes|required|string|max:255',
             'apellido' => 'nullable|string|max:255',
             'email' => 'nullable|email|max:255|unique:agentes,email,'.$agente->id,
@@ -57,6 +60,7 @@ class AgenteController extends Controller
             'direccion' => 'nullable|string',
             'fecha_alta' => 'nullable|date',
             'activo' => 'boolean',
+            'foto_url' => 'nullable|string|max:2048',
         ]);
 
         $agente->update($data);
