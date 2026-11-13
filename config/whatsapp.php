@@ -69,7 +69,16 @@ return [
             'vencimiento' => env('YCLOUD_TEMPLATE_VENCIMIENTO', 'g_pruebas2'),
             'test' => env('YCLOUD_TEMPLATE_TEST'),
         ],
+        /**
+         * Plantillas con botón URL dinámico "Pagar mi póliza".
+         * Solo g_pruebas (pago). g_pruebas2 (vigencia) NO va aquí.
+         */
+        'pay_button_templates' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('YCLOUD_PAY_BUTTON_TEMPLATES', 'g_pruebas'))
+        ))),
     ],
+
 
     'twilio' => [
         'account_sid' => env('TWILIO_ACCOUNT_SID'),

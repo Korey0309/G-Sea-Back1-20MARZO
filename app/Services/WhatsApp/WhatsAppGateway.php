@@ -2,9 +2,8 @@
 
 namespace App\Services\WhatsApp;
 
-use App\Models\CobranzaCuota;
-use App\Models\Poliza;
 use App\Models\WhatsappNotification;
+use App\Support\AseguradoraPagoLinks;
 
 /**
  * Fachada: elige YCloud o Twilio según WHATSAPP_PROVIDER.
@@ -47,7 +46,9 @@ class WhatsAppGateway
             return $this->ycloud->sendTemplate(
                 $notification->telefono,
                 $template,
-                $params
+                $params,
+                null,
+                $this->payButtonSuffix($notification, $template)
             );
         }
 
@@ -97,6 +98,29 @@ class WhatsAppGateway
         $name = $map[$key] ?? null;
 
         return filled($name) ? $name : null;
+    }
+
+    /**
+     * Sufijo del botón "Pagar mi póliza". Solo g_pruebas (pago).
+     * g_pruebas2 / vigencia_* no llevan botón.
+     */
+    private function payButtonSuffix(WhatsappNotification $notification, string $template): ?string
+    {
+        if (str_starts_with($notification->tipo, 'vigencia_')) {
+            return null;
+        }
+
+        $withButton = config('whatsapp.ycloud.pay_button_templates', []);
+        if (! is_array($withButton)) {
+            $withButton = [];
+        }
+        if (! in_array($template, $withButton, true)) {
+            return null;
+        }
+
+        $notification->loadMissing('poliza.aseguradora');
+
+        return AseguradoraPagoLinks::slugFor($notification->poliza?->aseguradora?->nombre);
     }
 
     /** @return list<string> */

@@ -19,6 +19,8 @@ class RamoSeeder extends Seeder
             ['ramo_id' => $vehiculos->id, 'nombre' => 'Automóviles', 'created_at' => now(), 'updated_at' => now()],
             ['ramo_id' => $vehiculos->id, 'nombre' => 'Motocicletas', 'created_at' => now(), 'updated_at' => now()],
             ['ramo_id' => $salud->id, 'nombre' => 'Gastos Médicos Mayores', 'created_at' => now(), 'updated_at' => now()],
+            ['ramo_id' => $salud->id, 'nombre' => 'Accidentes personales', 'created_at' => now(), 'updated_at' => now()],
+            ['ramo_id' => $salud->id, 'nombre' => 'Viajes', 'created_at' => now(), 'updated_at' => now()],
             ['ramo_id' => $vida->id, 'nombre' => 'Vida', 'created_at' => now(), 'updated_at' => now()],
             ['ramo_id' => $danos->id, 'nombre' => 'Daños Empresariales', 'created_at' => now(), 'updated_at' => now()],
         ]);

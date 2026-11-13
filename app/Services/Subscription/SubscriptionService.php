@@ -113,32 +113,62 @@ class SubscriptionService
     /**
      * Resuelve el Plan local a partir de un Stripe Price ID configurado en config/stripe.php.
      */
-    public function resolvePlanByStripePriceId(?string $priceId): ?Plan
-    {
-        if (! $priceId) {
-            return null;
-        }
-
-        $autoPrices = (array) config('stripe.prices', []);
-        foreach ($autoPrices as $slug => $configuredPrice) {
-            if ($configuredPrice && (string) $configuredPrice === (string) $priceId) {
-                return Plan::query()->where('slug', $slug)->first();
-            }
-        }
-
-        $manualPrices = (array) config('stripe.manual_prices', []);
-        foreach ($manualPrices as $slug => $configuredPrice) {
-            if ($configuredPrice && (string) $configuredPrice === (string) $priceId) {
-                return Plan::query()->where('slug', $slug)->first();
-            }
-        }
-
+    
+    
+    
+    
+     
+     
+/**
+ * Resuelve el Plan local a partir de un Stripe Price ID configurado en config/stripe.php.
+ *
+ * Si varios planes comparten el mismo Stripe Price ID,
+ * prioriza el plan público sobre los alias privados.
+ */
+public function resolvePlanByStripePriceId(?string $priceId): ?Plan
+{
+    if (! $priceId) {
         return null;
     }
 
-    /**
-     * Comprueba si un evento de Stripe ya fue procesado previamente.
-     */
+    $matchedPlan = null;
+
+    $priceGroups = [
+        (array) config('stripe.prices', []),
+        (array) config('stripe.manual_prices', []),
+    ];
+
+    foreach ($priceGroups as $prices) {
+        foreach ($prices as $slug => $configuredPrice) {
+            if (
+                empty($configuredPrice)
+                || (string) $configuredPrice !== (string) $priceId
+            ) {
+                continue;
+            }
+
+            $candidate = Plan::query()
+                ->where('slug', $slug)
+                ->first();
+
+            if (! $candidate) {
+                continue;
+            }
+
+            // Preferir siempre el plan público.
+            if ((bool) $candidate->is_public) {
+                return $candidate;
+            }
+
+            // Conservar el plan privado como alternativa
+            // únicamente si no existe uno público coincidente.
+            $matchedPlan ??= $candidate;
+        }
+    }
+
+    return $matchedPlan;
+}
+
     public function isStripeEventProcessed(?string $eventId): bool
     {
         if (! $eventId || ! $this->hasWebhookEventsTable()) {

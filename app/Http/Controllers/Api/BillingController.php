@@ -94,7 +94,7 @@ class BillingController extends BaseApiController
         $periodEnds = $sub?->current_period_ends_at;
         $isSamePlanActive = $sub
             && in_array($sub->status, [WorkspaceSubscription::STATUS_ACTIVE, WorkspaceSubscription::STATUS_CANCELED], true)
-            && (int) $sub->plan_id === (int) $targetPlan->id
+            && $this->areEquivalentPlans($currentPlan, $targetPlan)
             && $periodEnds
             && $periodEnds->isFuture();
 
@@ -243,6 +243,7 @@ class BillingController extends BaseApiController
 
         // Reconciliar estado local con Stripe antes de validar suscripciones activas.
         $subscription = $this->subscriptions->reconcileWithStripe($workspace, $stripe);
+        $subscription?->loadMissing('plan');
 
         if ($subscription?->stripe_subscription_id) {
             $isScheduledCancel = $subscription->status === WorkspaceSubscription::STATUS_CANCELED
@@ -711,6 +712,24 @@ class BillingController extends BaseApiController
             abort(response()->json(['message' => 'No tienes acceso a esta promotoría.'], 403));
         }
     }
+
+    private function areEquivalentPlans(?Plan $currentPlan, ?Plan $targetPlan): bool
+{
+    if (!$currentPlan || !$targetPlan) {
+        return false;
+    }
+
+    if ((int) $currentPlan->id === (int) $targetPlan->id) {
+        return true;
+    }
+
+    // Compatibilidad con el plan legacy pro y su equivalente público escala.
+    return (
+        $currentPlan->slug === 'pro' && $targetPlan->slug === 'escala'
+    ) || (
+        $currentPlan->slug === 'escala' && $targetPlan->slug === 'pro'
+    );
+}
 
     
 }

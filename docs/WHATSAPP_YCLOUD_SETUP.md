@@ -22,7 +22,11 @@ Recuerda que tu próximo pago es el {{4}} por {{5}}.
 Te enviaremos avisos antes de cada fecha de pago.
 ```
 
-Variables que manda G-SEA: `{{1}}=nombre`, `{{2}}=empresa`, `{{3}}=numero_poliza`, `{{4}}=fecha`, `{{5}}=monto`
+Variables del cuerpo: `{{1}}=nombre`, `{{2}}=empresa`, `{{3}}=numero_poliza`, `{{4}}=fecha`, `{{5}}=monto`.
+
+Botón URL (solo pago / `g_pruebas`): texto `Pagar mi póliza`, URL `https://gsea.company/pagar/{{1}}`.
+G-SEA manda el sufijo (`qualitas`, `axa`, …). El front en `/pagar/:slug` redirige al portal.
+`g_pruebas2` (vencimiento) **no** lleva botón.
 
 #### B) `gsea_recordatorio_pago` (7 / 3 / 1 días antes)
 ```text

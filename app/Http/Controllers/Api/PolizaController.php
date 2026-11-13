@@ -17,6 +17,7 @@ use App\Services\WhatsApp\WhatsappNotificationSender;
 use App\Support\WorkspacePermissions;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use App\Rules\PolizaAnteriorValida;
 
@@ -78,6 +79,11 @@ class PolizaController extends BaseApiController
     public function store(Request $request)
     {
         $this->requirePermission($request, WorkspacePermissions::POLIZAS_MANAGE);
+        $reqWs = $request->input('workspace_id');
+        if ($reqWs === 0 || $reqWs === '0' || $reqWs === '') {
+            $reqWs = null;
+        }
+        $workspaceId = $this->resolveWorkspaceId($request, $reqWs !== null ? (int) $reqWs : null);
         $data = $request->validate([
             'workspace_id' => 'sometimes|exists:workspaces,id',
             'contratante_id' => 'required|exists:contratantes,id',
@@ -86,7 +92,7 @@ class PolizaController extends BaseApiController
             'ramo_id' => 'required|exists:ramos,id',
             'subramo_id' => 'required|exists:subramos,id',
             'numero_poliza' => 'required|string|max:255',
-            'poliza_anterior_id' => ['nullable', 'integer', 'min:1', new PolizaAnteriorValida((int) $request->user()->current_workspace_id)],
+            'poliza_anterior_id' => ['nullable', 'integer', 'min:1', new PolizaAnteriorValida($workspaceId)],
             'fecha_emision' => 'nullable|date',
             'inicio_vigencia' => 'required|date',
             'fin_vigencia' => 'required|date|after_or_equal:inicio_vigencia',
@@ -106,11 +112,6 @@ class PolizaController extends BaseApiController
             'vehiculo.motor' => 'nullable|string|max:255',
             'vehiculo.pasajeros' => 'nullable|integer|min:0',
         ] + PolizaDetallesService::rules());
-        $reqWs = $data['workspace_id'] ?? null;
-        if ($reqWs === 0 || $reqWs === '0') {
-            $reqWs = null;
-        }
-        $workspaceId = $this->resolveWorkspaceId($request, $reqWs !== null ? (int) $reqWs : null);
 
         $contratante = Contratante::findOrFail($data['contratante_id']);
         if ((int) $contratante->workspace_id !== (int) $workspaceId) {
@@ -148,7 +149,7 @@ class PolizaController extends BaseApiController
 
         $data = $this->premiumCalculator->apply($data);
 
-        return DB::transaction(function () use ($data, $request, $workspaceId) {
+        $poliza = DB::transaction(function () use ($data, $request, $workspaceId) {
             $poliza = Poliza::create([
                 'workspace_id' => $workspaceId,
                 'contratante_id' => $data['contratante_id'],
@@ -183,30 +184,40 @@ class PolizaController extends BaseApiController
             $this->detallesService->sync($poliza, $data);
             $poliza->load('contratante');
             $this->cobranzaCuotasGenerator->syncForPoliza($poliza);
+
+            return $poliza;
+        });
+
+        // WhatsApp fuera de la transacción: un fallo de YCloud/Meta no debe tumbar el alta.
+        try {
             $fresh = $poliza->fresh();
             $this->whatsappReminderPlanner->syncForPoliza($fresh, isNewPoliza: true);
             $this->vigenciaReminderPlanner->syncForPoliza($fresh);
-            // Si hoy hay pago y/o vence hoy: manda ambos al momento (además del alta).
             $this->whatsappSender->sendDueForPoliza((int) $fresh->id, includeAlta: false);
+        } catch (\Throwable $e) {
+            Log::error('WhatsApp post-alta falló (póliza ya guardada)', [
+                'poliza_id' => $poliza->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
-            return response()->json(
-                $poliza->fresh()->load([
-                    'contratante',
-                    'aseguradora',
-                    'ramo',
-                    'subramo',
-                    'agenteWorkspace',
-                    'vehiculo',
+        return response()->json(
+            $poliza->fresh()->load([
+                'contratante',
+                'aseguradora',
+                'ramo',
+                'subramo',
+                'agenteWorkspace',
+                'vehiculo',
                 'asegurados',
                 'coberturas',
                 'beneficiarios',
                 'gastosMedicos',
                 'viaje',
-                    'cobranzaCuotas',
-                ]),
-                201
-            );
-        });
+                'cobranzaCuotas',
+            ]),
+            201
+        );
     }
 
     public function show(Poliza $poliza)
@@ -324,7 +335,7 @@ class PolizaController extends BaseApiController
             );
         }
 
-        return DB::transaction(function () use ($request, $poliza, $data) {
+        $result = DB::transaction(function () use ($request, $poliza, $data) {
             $keys = [
                 'workspace_id',
                 'contratante_id',
@@ -389,30 +400,45 @@ class PolizaController extends BaseApiController
                 $poliza->refresh();
                 $poliza->load('contratante');
                 $this->cobranzaCuotasGenerator->syncForPoliza($poliza);
-                $this->whatsappReminderPlanner->syncForPoliza($poliza->fresh(), isNewPoliza: false);
             }
 
-            if ($shouldSyncVigencia || $shouldSyncCuotas) {
-                $fresh = $poliza->fresh()->loadMissing(['contratante', 'aseguradora', 'workspace']);
+            return [
+                'poliza' => $poliza,
+                'shouldSyncCuotas' => $shouldSyncCuotas,
+                'shouldSyncVigencia' => $shouldSyncVigencia,
+            ];
+        });
+
+        try {
+            if ($result['shouldSyncCuotas']) {
+                $this->whatsappReminderPlanner->syncForPoliza($result['poliza']->fresh(), isNewPoliza: false);
+            }
+            if ($result['shouldSyncVigencia'] || $result['shouldSyncCuotas']) {
+                $fresh = $result['poliza']->fresh()->loadMissing(['contratante', 'aseguradora', 'workspace']);
                 $this->vigenciaReminderPlanner->syncForPoliza($fresh);
                 $this->whatsappSender->sendDueForPoliza((int) $fresh->id, includeAlta: false);
             }
-
-            return $poliza->fresh()->load([
-                'contratante',
-                'aseguradora',
-                'ramo',
-                'subramo',
-                'agenteWorkspace',
-                'vehiculo',
-                'asegurados',
-                'coberturas',
-                'beneficiarios',
-                'gastosMedicos',
-                'viaje',
-                'cobranzaCuotas' => fn ($q) => $q->orderBy('fecha_programada')->orderBy('numero_cuota'),
+        } catch (\Throwable $e) {
+            Log::error('WhatsApp post-update falló (póliza ya guardada)', [
+                'poliza_id' => $result['poliza']->id,
+                'error' => $e->getMessage(),
             ]);
-        });
+        }
+
+        return $result['poliza']->fresh()->load([
+            'contratante',
+            'aseguradora',
+            'ramo',
+            'subramo',
+            'agenteWorkspace',
+            'vehiculo',
+            'asegurados',
+            'coberturas',
+            'beneficiarios',
+            'gastosMedicos',
+            'viaje',
+            'cobranzaCuotas' => fn ($q) => $q->orderBy('fecha_programada')->orderBy('numero_cuota'),
+        ]);
     }
 
     public function destroy(Poliza $poliza)

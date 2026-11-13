@@ -41,10 +41,16 @@ class YCloudWhatsAppService
      * Envía plantilla aprobada en Meta (recomendado para recordatorios).
      *
      * @param  list<string>  $bodyParams  valores para {{1}}, {{2}}, ...
+     * @param  string|null  $urlButtonSuffix  sufijo del botón URL (ej. qualitas), no la URL completa
      * @return array{sid: string|null, status: string}
      */
-    public function sendTemplate(string $toPhone, string $templateName, array $bodyParams = [], ?string $language = null): array
-    {
+    public function sendTemplate(
+        string $toPhone,
+        string $templateName,
+        array $bodyParams = [],
+        ?string $language = null,
+        ?string $urlButtonSuffix = null,
+    ): array {
         $this->assertReady();
 
         $components = [];
@@ -55,6 +61,17 @@ class YCloudWhatsAppService
                     fn (string $text) => ['type' => 'text', 'text' => $text],
                     array_values($bodyParams)
                 ),
+            ];
+        }
+
+        if (filled($urlButtonSuffix)) {
+            $components[] = [
+                'type' => 'button',
+                'sub_type' => 'url',
+                'index' => '0',
+                'parameters' => [
+                    ['type' => 'text', 'text' => $urlButtonSuffix],
+                ],
             ];
         }
 

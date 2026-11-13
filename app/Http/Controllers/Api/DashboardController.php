@@ -162,6 +162,28 @@ class DashboardController extends BaseApiController
                 'cartera_por_aseguradora' => $porAseguradora,
             ];
             $result['polizas_vencidas'] = (clone $base)->whereDate('fin_vigencia', '<', $today->toDateString())->count();
+
+            // Tasa de renovación = pólizas vencidas que ya tienen una renovación vinculada
+            // (poliza_anterior_id) / total de pólizas vencidas. Si no hay vencidas → null (N/D).
+            if (Schema::hasColumn('polizas', 'poliza_anterior_id')) {
+                $vencidasIds = (clone $base)
+                    ->whereDate('fin_vigencia', '<', $today->toDateString())
+                    ->pluck('id');
+                $totalVencidas = $vencidasIds->count();
+                if ($totalVencidas === 0) {
+                    $result['tasa_renovacion'] = null;
+                    $result['renovaciones_registradas'] = 0;
+                } else {
+                    $renovadas = (clone $base)
+                        ->whereIn('poliza_anterior_id', $vencidasIds)
+                        ->count();
+                    $result['renovaciones_registradas'] = $renovadas;
+                    $result['tasa_renovacion'] = round(($renovadas / $totalVencidas) * 100, 1);
+                }
+            } else {
+                $result['tasa_renovacion'] = null;
+                $result['renovaciones_registradas'] = null;
+            }
         }
         if ($can(P::CONTRATANTES_VIEW)) {
             $result['clientes_total'] = Contratante::where('workspace_id', $ws)->count();

@@ -870,6 +870,27 @@ PROMPT;
 
                 return ['id' => null, 'nombre' => null, 'rfc' => null, 'matched_by' => null];
             }
+
+            // 3) Contiene / parcial (ADVANCE71 vs ADVANCE71 MEXICO)
+            $byPartial = $contratantes->filter(function (Contratante $c) use ($nombreDetectado) {
+                $n = $this->normalizeSearchText($c->nombre);
+                if ($n === '') {
+                    return false;
+                }
+
+                return str_contains($n, $nombreDetectado) || str_contains($nombreDetectado, $n);
+            })->values();
+
+            if ($byPartial->count() === 1) {
+                $match = $byPartial->first();
+
+                return [
+                    'id' => (int) $match->id,
+                    'nombre' => $match->nombre,
+                    'rfc' => $match->rfc,
+                    'matched_by' => 'nombre_parcial',
+                ];
+            }
         }
 
         $label = $detected['nombre'] ?: $detected['rfc'];
@@ -906,7 +927,7 @@ PROMPT;
             return ['id' => (int) $m->id, 'nombre' => $m->nombre];
         }
 
-        // 2) Alias comerciales comunes en México -> palabra clave normalizada
+        // 2) Alias comerciales (PDF largo ↔ siglas del catálogo, ej. Ve por Más ↔ BX+)
         $aliases = [
             'gnp' => ['gnp', 'grupo nacional provincial'],
             'qualitas' => ['qualitas', 'qualitas compania de seguros'],
@@ -923,7 +944,14 @@ PROMPT;
             'zurich' => ['zurich', 'zurich seguros'],
             'allianz' => ['allianz', 'allianz mexico'],
             'ana' => ['ana seguros', 'ana compania de seguros'],
-            'bx+' => ['ve por mas', 'bx+', 'seguros bx+'],
+            'bx+' => [
+                'bx+',
+                'bx',
+                've por mas',
+                'seguros ve por mas',
+                'grupo financiero ve por mas',
+                'seguros bx',
+            ],
             'potasi' => ['el potosi', 'seguros el potosi'],
             'bupa' => ['bupa', 'bupa mexico'],
             'plan seguro' => ['plan seguro'],
@@ -938,18 +966,23 @@ PROMPT;
             if (str_contains($normDetected, $catNorm) || str_contains($catNorm, $normDetected)) {
                 return true;
             }
-            foreach ($aliases as $synonyms) {
-                $detectedHasAlias = false;
-                $catHasAlias = false;
-                foreach ($synonyms as $syn) {
-                    if (preg_match('/\b' . preg_quote($syn, '/') . '\b/u', $normDetected)) {
-                        $detectedHasAlias = true;
+            foreach ($aliases as $canonical => $synonyms) {
+                $tokens = array_merge([$canonical], $synonyms);
+                $detectedHit = false;
+                $catHit = false;
+                foreach ($tokens as $syn) {
+                    $synNorm = $this->normalizeSearchText($syn);
+                    if ($synNorm === '') {
+                        continue;
                     }
-                    if (preg_match('/\b' . preg_quote($syn, '/') . '\b/u', $catNorm)) {
-                        $catHasAlias = true;
+                    if (str_contains($normDetected, $synNorm)) {
+                        $detectedHit = true;
+                    }
+                    if ($catNorm === $synNorm || str_contains($catNorm, $synNorm)) {
+                        $catHit = true;
                     }
                 }
-                if ($detectedHasAlias && $catHasAlias) {
+                if ($detectedHit && $catHit) {
                     return true;
                 }
             }
@@ -961,6 +994,42 @@ PROMPT;
             $m = $matchedCandidates->first();
 
             return ['id' => (int) $m->id, 'nombre' => $m->nombre];
+        }
+
+        // Preferir match por alias canónico si hay varios (ej. solo BX+)
+        if ($matchedCandidates->count() > 1) {
+            foreach ($aliases as $canonical => $synonyms) {
+                $canonNorm = $this->normalizeSearchText($canonical);
+                $pdfHas = false;
+                foreach (array_merge([$canonical], $synonyms) as $syn) {
+                    if (str_contains($normDetected, $this->normalizeSearchText($syn))) {
+                        $pdfHas = true;
+                        break;
+                    }
+                }
+                if (! $pdfHas) {
+                    continue;
+                }
+                $preferred = $matchedCandidates->filter(function (Aseguradora $a) use ($canonNorm, $synonyms) {
+                    $catNorm = $this->normalizeSearchText($a->nombre);
+                    if ($catNorm === $canonNorm) {
+                        return true;
+                    }
+                    foreach ($synonyms as $syn) {
+                        $synNorm = $this->normalizeSearchText($syn);
+                        if ($synNorm !== '' && ($catNorm === $synNorm || str_contains($catNorm, $synNorm))) {
+                            return true;
+                        }
+                    }
+
+                    return false;
+                })->values();
+                if ($preferred->count() === 1) {
+                    $m = $preferred->first();
+
+                    return ['id' => (int) $m->id, 'nombre' => $m->nombre];
+                }
+            }
         }
 
         $warnings[] = sprintf(
@@ -1002,10 +1071,10 @@ PROMPT;
                 $tipoInferido = 'vida';
             } elseif (str_contains($combined, 'dano') || str_contains($combined, 'empresarial') || str_contains($combined, 'hogar') || str_contains($combined, 'incendio')) {
                 $tipoInferido = 'danos';
+            } elseif (str_contains($combined, 'viaje') || str_contains($combined, 'segurviaje')) {
+                $tipoInferido = 'viaje';
             } elseif (str_contains($combined, 'accidente')) {
                 $tipoInferido = 'accidentes';
-            } elseif (str_contains($combined, 'viaje')) {
-                $tipoInferido = 'viaje';
             }
         }
 
@@ -1015,8 +1084,8 @@ PROMPT;
             'medicos' => ['gastos medicos mayores', 'gastos medicos'],
             'vida' => ['vida'],
             'danos' => ['danos empresariales', 'danos'],
-            'accidentes' => ['accidentes personales'],
-            'viaje' => ['viajes', 'seguro de viaje', 'seguro de viajes'],
+            'accidentes' => ['accidentes personales', 'accidentes'],
+            'viaje' => ['viajes', 'seguro de viaje', 'seguro de viajes', 'viaje', 'segurviaje'],
             default => [],
         };
 
@@ -1030,16 +1099,33 @@ PROMPT;
             }
         }
 
-        // 2) Coincidencia por tipo de póliza contra catálogo de subramos
+        // 2) Coincidencia por tipo / keywords (exacta o contenida)
         if (! $matchedSubramo && ! empty($targetSubramoKeywords)) {
             $byKeyword = $subramos->filter(function (Subramo $s) use ($targetSubramoKeywords) {
                 $sNorm = $this->normalizeSearchText($s->nombre);
+                foreach ($targetSubramoKeywords as $kw) {
+                    if ($sNorm === $kw || str_contains($sNorm, $kw) || str_contains($kw, $sNorm)) {
+                        return true;
+                    }
+                }
 
-                return in_array($sNorm, $targetSubramoKeywords, true);
+                return false;
             })->values();
 
-            if ($byKeyword->count() === 1) {
+            if ($byKeyword->count() >= 1) {
                 $matchedSubramo = $byKeyword->first();
+            }
+        }
+
+        // 3) Contiene el texto detectado (ej. "accidentes personales individual segurviaje")
+        if (! $matchedSubramo && $normSub !== '') {
+            $partial = $subramos->filter(function (Subramo $s) use ($normSub) {
+                $sNorm = $this->normalizeSearchText($s->nombre);
+
+                return $sNorm !== '' && (str_contains($normSub, $sNorm) || str_contains($sNorm, $normSub));
+            })->values();
+            if ($partial->count() === 1) {
+                $matchedSubramo = $partial->first();
             }
         }
 
@@ -1056,6 +1142,25 @@ PROMPT;
             }
         }
 
+        // 4) No está en catálogo: crear ramo/subramo a partir de lo detectado (FK obligatoria al guardar)
+        $created = $this->createRamoSubramoFromDetection(
+            $ramoDetected,
+            $subramoDetected,
+            $tipoInferido,
+            $normRamo,
+            $normSub
+        );
+
+        if ($created) {
+            $warnings[] = sprintf(
+                'Se agregó al catálogo el subramo «%s» (ramo «%s») detectado en el PDF.',
+                $created['subramo_nombre'],
+                $created['ramo_nombre']
+            );
+
+            return $created;
+        }
+
         $warnings[] = 'No se pudo asociar automáticamente el Ramo y Subramo del catálogo. Selecciónalos manualmente.';
 
         return [
@@ -1065,6 +1170,96 @@ PROMPT;
             'subramo_nombre' => null,
             'tipo_poliza' => $tipoInferido,
         ];
+    }
+
+    /**
+     * Crea (o reutiliza) ramo/subramo cuando el PDF trae un producto que aún no está en catálogo.
+     *
+     * @return array{ramo_id: int, ramo_nombre: string, subramo_id: int, subramo_nombre: string, tipo_poliza: string|null}|null
+     */
+    private function createRamoSubramoFromDetection(
+        ?string $ramoDetected,
+        ?string $subramoDetected,
+        ?string $tipoInferido,
+        string $normRamo,
+        string $normSub
+    ): ?array {
+        $parentNombre = $this->defaultRamoNombreForTipo($tipoInferido, $ramoDetected, $normRamo);
+        $subNombre = $this->defaultSubramoNombreForTipo($tipoInferido, $subramoDetected, $normSub);
+
+        if ($parentNombre === null || $subNombre === null) {
+            return null;
+        }
+
+        $parent = Ramo::query()->get()->first(function (Ramo $r) use ($parentNombre) {
+            return $this->normalizeSearchText($r->nombre) === $this->normalizeSearchText($parentNombre);
+        });
+
+        if (! $parent) {
+            $parent = Ramo::query()->create(['nombre' => $parentNombre]);
+        }
+
+        $existingSub = Subramo::query()
+            ->where('ramo_id', $parent->id)
+            ->get()
+            ->first(function (Subramo $s) use ($subNombre) {
+                return $this->normalizeSearchText($s->nombre) === $this->normalizeSearchText($subNombre);
+            });
+
+        if (! $existingSub) {
+            $existingSub = Subramo::query()->create([
+                'ramo_id' => $parent->id,
+                'nombre' => $subNombre,
+            ]);
+        }
+
+        return [
+            'ramo_id' => (int) $parent->id,
+            'ramo_nombre' => $parent->nombre,
+            'subramo_id' => (int) $existingSub->id,
+            'subramo_nombre' => $existingSub->nombre,
+            'tipo_poliza' => $tipoInferido,
+        ];
+    }
+
+    private function defaultRamoNombreForTipo(?string $tipo, ?string $ramoDetected, string $normRamo): ?string
+    {
+        return match ($tipo) {
+            'auto', 'moto' => 'VEHÍCULOS',
+            'medicos', 'accidentes', 'viaje' => 'ACCIDENTES Y ENFERMEDADES',
+            'vida' => 'VIDA',
+            'danos' => 'DAÑOS',
+            default => $ramoDetected && $normRamo !== ''
+                ? mb_strtoupper(trim($ramoDetected), 'UTF-8')
+                : null,
+        };
+    }
+
+    private function defaultSubramoNombreForTipo(?string $tipo, ?string $subramoDetected, string $normSub): ?string
+    {
+        $fromTipo = match ($tipo) {
+            'auto' => 'Automóviles',
+            'moto' => 'Motocicletas',
+            'medicos' => 'Gastos Médicos Mayores',
+            'vida' => 'Vida',
+            'danos' => 'Daños Empresariales',
+            'accidentes' => 'Accidentes personales',
+            'viaje' => 'Viajes',
+            default => null,
+        };
+
+        if ($fromTipo) {
+            return $fromTipo;
+        }
+
+        if ($subramoDetected && $normSub !== '') {
+            // Nombre legible corto a partir del PDF
+            $clean = trim(preg_replace('/\s+/', ' ', $subramoDetected) ?? $subramoDetected);
+
+            return mb_substr($clean, 0, 120);
+        }
+
+        return null;
     }
 
     /**
